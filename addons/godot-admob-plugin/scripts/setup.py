@@ -142,30 +142,24 @@ class AdMobPluginSetup:
         return True
     
     def setup_ios(self):
-        """Setup iOS plugin"""
+        """Setup iOS plugin using dedicated script"""
         if platform.system() != "Darwin":
             print("\n⚠ iOS setup skipped (not on macOS)")
             return True
         
         print("\n=== Setting up iOS Plugin ===")
         
-        os.chdir(self.ios_dir)
-        
-        print("Installing CocoaPods dependencies...")
-        result = subprocess.run(["pod", "install"], capture_output=True, text=True)
+        # Run dedicated iOS setup script
+        ios_script = self.plugin_dir / "scripts" / "ios_setup.py"
+        result = subprocess.run([sys.executable, str(ios_script)], capture_output=True, text=True)
         
         if result.returncode == 0:
-            print("✓ iOS dependencies installed")
-            print("\nNote: iOS plugin requires manual build in Xcode")
-            print("1. Open GodotAdMob.xcworkspace in Xcode")
-            print("2. Build for Generic iOS Device")
-            print("3. The framework will be in DerivedData")
+            print(result.stdout)
+            return True
         else:
-            print("✗ iOS setup failed:")
+            print("iOS setup failed:")
             print(result.stderr)
             return False
-        
-        return True
     
     def create_example_project(self):
         """Create example Godot project files"""
@@ -225,8 +219,15 @@ func _on_rewarded_earned(currency, amount):
         self.setup_gradle_wrapper()
         self.configure_admob_ids()
         
-        if not self.build_android():
-            print("\n✗ Android build failed")
+        # Run dedicated Android setup script
+        android_script = self.plugin_dir / "scripts" / "android_setup.py"
+        result = subprocess.run([sys.executable, str(android_script)], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print("Android setup failed:")
+            print(result.stderr)
             return 1
         
         self.setup_ios()
