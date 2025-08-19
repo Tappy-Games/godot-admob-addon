@@ -1,0 +1,39 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[android]
+
+plugins=PackedStringArray("GodotAdMob")
+
+[application]
+
+config/name="TappyGames-Admob"
+run/main_scene="res://demo/AdMobDemo.tscn"
+config/features=PackedStringArray("4.5", "Mobile")
+config/icon="res://icon.svg"
+
+[autoload]
+
+AdMob="*res://addons/godot-admob-plugin/AdMobStandalone.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep_width"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot-admob-plugin/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="mobile"
