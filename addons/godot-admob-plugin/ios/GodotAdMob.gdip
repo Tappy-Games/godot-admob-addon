@@ -1,0 +1,14 @@
+[config]
+
+name="GodotAdMob"
+binary="GodotAdMob.a"
+
+[dependencies]
+
+linked_frameworks=["GoogleMobileAds"]
+embedded_frameworks=[]
+system_frameworks=["AdSupport", "AppTrackingTransparency", "AudioToolbox", "AVFoundation", "CFNetwork", "CoreGraphics", "CoreMedia", "CoreTelephony", "CoreVideo", "MediaPlayer", "MessageUI", "MobileCoreServices", "QuartzCore", "Security", "StoreKit", "SystemConfiguration", "WebKit"]
+xcframeworks=[]
+
+[plist]
+
