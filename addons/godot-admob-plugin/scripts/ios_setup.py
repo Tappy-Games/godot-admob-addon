@@ -48,60 +48,53 @@ class iOSAdMobSetup:
                 print("   Try manually: sudo gem install cocoapods")
                 return False
     
-    def setup_podfile(self):
-        """Create and configure Podfile for the plugin"""
-        podfile_content = '''platform :ios, '12.0'
-use_frameworks!
+    def create_gdip_file(self):
+        """Create iOS plugin configuration file"""
+        gdip_content = '''[config]
 
-target 'GodotAdMob' do
-  pod 'Google-Mobile-Ads-SDK', '~> 11.2.0'
-end
+name="GodotAdMob"
+binary="GodotAdMob.a"
 
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
-      config.build_settings['ENABLE_BITCODE'] = 'NO'
-    end
-  end
-end
+[dependencies]
+
+linked_frameworks=["GoogleMobileAds"]
+embedded_frameworks=[]
+system_frameworks=["AdSupport", "AppTrackingTransparency", "AudioToolbox", "AVFoundation", "CFNetwork", "CoreGraphics", "CoreMedia", "CoreTelephony", "CoreVideo", "MediaPlayer", "MessageUI", "MobileCoreServices", "QuartzCore", "Security", "StoreKit", "SystemConfiguration", "WebKit"]
+xcframeworks=[]
+
+[plist]
+
 '''
         
-        podfile_path = self.ios_dir / "Podfile"
-        with open(podfile_path, 'w') as f:
-            f.write(podfile_content)
+        gdip_path = self.ios_dir / "GodotAdMob.gdip"
+        with open(gdip_path, 'w') as f:
+            f.write(gdip_content)
         
-        print("✓ Podfile configured")
+        print("✓ iOS plugin configuration created")
         return True
     
-    def install_pods(self):
-        """Install iOS dependencies via CocoaPods"""
-        print("📦 Installing iOS dependencies (this may take a few minutes)...")
+    def setup_plugin_structure(self):
+        """Set up iOS plugin structure for Godot"""
+        print("📦 Setting up iOS plugin structure...")
         
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(self.ios_dir)
-            
-            # Run pod install
-            result = subprocess.run(["pod", "install"], 
-                                  capture_output=True, text=True, timeout=300)
-            
-            if result.returncode == 0:
-                print("✓ iOS dependencies installed successfully")
-                return True
-            else:
-                print("❌ Failed to install pods:")
-                print(result.stderr)
-                return False
-                
-        except subprocess.TimeoutExpired:
-            print("❌ Pod installation timed out")
+        # Check if we have the necessary source files
+        source_files = [
+            self.ios_dir / "GodotAdMob.mm",
+            self.ios_dir / "Info.plist"
+        ]
+        
+        missing_files = []
+        for file_path in source_files:
+            if not file_path.exists():
+                missing_files.append(file_path.name)
+        
+        if missing_files:
+            print(f"⚠ Missing source files: {', '.join(missing_files)}")
+            print("  iOS plugin requires native implementation files")
             return False
-        except Exception as e:
-            print(f"❌ Error during pod installation: {e}")
-            return False
-        finally:
-            os.chdir(old_cwd)
+        
+        print("✓ iOS plugin structure verified")
+        return True
     
     def create_xcodeproj(self):
         """Create basic Xcode project structure"""
@@ -154,9 +147,9 @@ end
     def verify_setup(self):
         """Verify that everything is set up correctly"""
         checks = [
-            (self.ios_dir / "Podfile", "Podfile"),
-            (self.ios_dir / "Pods", "Installed pods"),
-            (self.ios_dir / "GodotAdMob.xcworkspace", "Xcode workspace"),
+            (self.ios_dir / "GodotAdMob.gdip", "iOS plugin configuration"),
+            (self.ios_dir / "GodotAdMob.mm", "Native implementation"),
+            (self.ios_dir / "Info.plist", "Info.plist"),
         ]
         
         all_good = True
@@ -182,10 +175,10 @@ end
         if not self.install_cocoapods():
             return 1
         
-        if not self.setup_podfile():
+        if not self.create_gdip_file():
             return 1
         
-        if not self.install_pods():
+        if not self.setup_plugin_structure():
             return 1
         
         if not self.verify_setup():
@@ -193,10 +186,10 @@ end
         
         print("\n🎉 iOS setup complete!")
         print("\nNext steps:")
-        print("1. Open GodotAdMob.xcworkspace in Xcode")
-        print("2. Build the framework for iOS")
-        print("3. Copy the built framework to your Godot iOS export")
-        print("4. The AdMob SDK dependencies are now included automatically")
+        print("1. The plugin is ready for iOS export")
+        print("2. Export your project to iOS - the plugin will be automatically included")
+        print("3. AdMob SDK dependencies will be handled during the export process")
+        print("4. For headless export: godot --headless --export-release 'iOS' builds/ios/")
         
         return 0
 

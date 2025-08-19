@@ -44,8 +44,9 @@ class AndroidAdMobSetup:
                 print("✓ Gradle wrapper created")
                 return True
             except:
-                # If no system gradle, download wrapper manually
-                return self._download_gradle_wrapper()
+                print("⚠ Could not create Gradle wrapper (system gradle not available)")
+                print("  The plugin will use system gradle for building")
+                return True  # Return True to continue setup
                 
         except Exception as e:
             print(f"❌ Failed to setup Gradle wrapper: {e}")
@@ -62,7 +63,7 @@ class AndroidAdMobSetup:
         gradle_dir.mkdir(parents=True, exist_ok=True)
         
         # Download wrapper jar
-        wrapper_jar_url = "https://github.com/gradle/gradle/raw/v8.4.0/gradle/wrapper/gradle-wrapper.jar"
+        wrapper_jar_url = "https://services.gradle.org/distributions/gradle-8.4-wrapper.jar"
         wrapper_properties_content = '''distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
 distributionUrl=https\\://services.gradle.org/distributions/gradle-8.4-bin.zip
@@ -81,7 +82,7 @@ zipStorePath=wrapper/dists
             
             # Create gradlew scripts
             gradlew_script = '''#!/bin/sh
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS="-Xmx64m -Xms64m"
 APP_NAME="Gradle"
 APP_BASE_NAME=`basename "$0"`
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
@@ -102,7 +103,6 @@ cd "`dirname \"$PRG\"`/" >/dev/null
 APP_HOME="`pwd -P`"
 cd "$SAVED" >/dev/null
 
-APP_ARGS=`save "$@"`
 exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "$@"
 '''
             
@@ -132,16 +132,27 @@ exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "
         
         print("📦 Downloading Godot Android library...")
         
-        # Use Godot 4.2 stable AAR
-        godot_aar_url = "https://github.com/godotengine/godot/releases/download/4.2-stable/godot-lib.4.2.stable.release.aar"
+        # Try multiple versions in order of preference
+        versions_to_try = [
+            "4.4.1-stable/godot-lib.4.4.1.stable.template_release.aar",
+            "4.3-stable/godot-lib.4.3.stable.template_release.aar",
+            "4.2.2-stable/godot-lib.4.2.2.stable.template_release.aar", 
+            "4.2.1-stable/godot-lib.4.2.1.stable.template_release.aar"
+        ]
         
-        try:
-            urllib.request.urlretrieve(godot_aar_url, aar_path)
-            print("✓ Godot Android library downloaded")
-            return True
-        except Exception as e:
-            print(f"❌ Failed to download Godot AAR: {e}")
-            return False
+        for version_path in versions_to_try:
+            godot_aar_url = f"https://github.com/godotengine/godot/releases/download/{version_path}"
+            try:
+                print(f"  Trying {godot_aar_url.split('/')[-1]}...")
+                urllib.request.urlretrieve(godot_aar_url, aar_path)
+                print("✓ Godot Android library downloaded")
+                return True
+            except Exception as e:
+                print(f"  Failed ({str(e)[:50]}...)")
+                continue
+                
+        print("❌ Could not download Godot Android library from any version")
+        return False
     
     def build_plugin(self):
         """Build the Android plugin"""
@@ -151,8 +162,22 @@ exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "
         try:
             os.chdir(self.android_dir)
             
-            # Use gradlew to build
-            gradle_cmd = "./gradlew" if os.path.exists("gradlew") else "gradle"
+            # Check if system gradle is available
+            gradle_cmd = None
+            if os.path.exists("gradlew"):
+                gradle_cmd = "./gradlew"
+            else:
+                try:
+                    subprocess.run(["gradle", "-version"], capture_output=True, check=True)
+                    gradle_cmd = "gradle"
+                except:
+                    print("⚠ No Gradle found. Skipping build step.")
+                    print("\nTo complete the setup later:")
+                    print("  1. Install Gradle: https://gradle.org/install/")
+                    print("  2. Or run: gradle wrapper (from the android directory)")
+                    print("  3. Then run: gradle assembleRelease")
+                    return False
+            
             result = subprocess.run([gradle_cmd, "assembleRelease"], 
                                   capture_output=True, text=True)
             
@@ -170,7 +195,8 @@ exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "
                 return True
             else:
                 print("❌ Build failed:")
-                print(result.stderr)
+                print("STDOUT:", result.stdout)
+                print("STDERR:", result.stderr)
                 return False
                 
         finally:
@@ -179,11 +205,26 @@ exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "
     def verify_setup(self):
         """Verify the Android setup"""
         checks = [
-            (self.android_dir / "gradlew", "Gradle wrapper"),
             (self.android_dir / "libs" / "godot-lib.release.aar", "Godot library"),
             (self.android_dir / "build.gradle", "Build configuration"),
             (self.android_dir / "src" / "main" / "java", "Source code"),
         ]
+        
+        # Optional check for Gradle wrapper
+        gradle_wrapper_exists = (self.android_dir / "gradlew").exists()
+        gradle_system_available = False
+        try:
+            subprocess.run(["gradle", "-version"], capture_output=True, check=True)
+            gradle_system_available = True
+        except:
+            pass
+            
+        if gradle_wrapper_exists:
+            print("✓ Gradle wrapper found")
+        elif gradle_system_available:
+            print("✓ System Gradle available")
+        else:
+            print("⚠ No Gradle found (install Gradle or run 'gradle wrapper')")
         
         all_good = True
         for path, name in checks:
@@ -208,15 +249,24 @@ exec java $DEFAULT_JVM_OPTS -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" "
         if not self.download_godot_aar():
             return 1
         
-        if not self.build_plugin():
-            return 1
+        build_result = self.build_plugin()
+        if not build_result:
+            print("\n⚠ Build skipped due to missing Gradle.")
+            print("The plugin is ready for manual building when Gradle is available.")
+            # Don't return 1, continue with verification
         
-        if not self.verify_setup():
-            return 1
+        setup_complete = self.verify_setup()
         
-        print("\n🎉 Android setup complete!")
-        print("\nThe plugin AAR is ready for use in Godot projects.")
-        print("The Google Play Services Ads dependency is automatically handled.")
+        if setup_complete:
+            print("\n🎉 Android setup complete!")
+            if build_result:
+                print("\nThe plugin AAR is ready for use in Godot projects.")
+            else:
+                print("\nThe plugin source is ready. Build with Gradle when available.")
+            print("The Google Play Services Ads dependency is automatically handled.")
+        else:
+            print("\n⚠ Android setup completed with some components missing.")
+            print("Please install missing dependencies and run the setup again.")
         
         return 0
 

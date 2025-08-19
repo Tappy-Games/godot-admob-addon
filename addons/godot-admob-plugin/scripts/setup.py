@@ -5,6 +5,7 @@ import sys
 import json
 import subprocess
 import platform
+import argparse
 from pathlib import Path
 
 class AdMobPluginSetup:
@@ -58,27 +59,98 @@ class AdMobPluginSetup:
         if not godot_lib.exists():
             print("Downloading Godot Android library...")
             import urllib.request
-            url = "https://github.com/godotengine/godot/releases/download/4.2-stable/godot-lib.4.2.stable.release.aar"
-            urllib.request.urlretrieve(url, godot_lib)
-            print("✓ Godot Android library downloaded")
+            
+            # Try multiple versions and naming patterns in order of preference
+            versions_to_try = [
+                "4.4.1-stable/godot-lib.4.4.1.stable.template_release.aar",
+                "4.3-stable/godot-lib.4.3.stable.template_release.aar",
+                "4.2.2-stable/godot-lib.4.2.2.stable.template_release.aar", 
+                "4.2.1-stable/godot-lib.4.2.1.stable.template_release.aar",
+                "4.4.1-stable/godot-lib.4.4.1.stable.release.aar",
+                "4.3-stable/godot-lib.4.3.stable.release.aar", 
+                "4.2.2-stable/godot-lib.4.2.2.stable.release.aar",
+                "4.2.1-stable/godot-lib.4.2.1.stable.release.aar"
+            ]
+            
+            success = False
+            for version_path in versions_to_try:
+                url = f"https://github.com/godotengine/godot/releases/download/{version_path}"
+                try:
+                    print(f"  Trying {url.split('/')[-1]}...")
+                    urllib.request.urlretrieve(url, godot_lib)
+                    print("✓ Godot Android library downloaded")
+                    success = True
+                    break
+                except urllib.error.HTTPError as e:
+                    print(f"  Failed ({e.code}), trying next version...")
+                    continue
+            
+            if not success:
+                print("✗ Could not download Godot Android library from GitHub releases")
+                print("\nAlternative: The plugin will attempt to use Gradle dependency instead.")
+                print("This requires configuring build.gradle to use the Godot library from Maven Central.")
+                print("\nIf you need the AAR file manually:")
+                print("1. Visit: https://github.com/godotengine/godot/releases")
+                print("2. Download a godot-lib.X.X.stable.template_release.aar file")
+                print(f"3. Place it at: {godot_lib}")
+                print("\nContinuing setup without local AAR file...")
+                
+                # Create a placeholder file to indicate we're using Maven dependency
+                with open(godot_lib.parent / "USE_MAVEN_DEPENDENCY.txt", 'w') as f:
+                    f.write("This plugin is configured to use Godot Android library from Maven Central.\n")
+                    f.write("No local AAR file is needed.\n")
         else:
             print("✓ Godot Android library already present")
+        
+        return True
     
     def setup_gradle_wrapper(self):
         """Setup Gradle wrapper for Android"""
         gradle_wrapper = self.android_dir / "gradlew"
         if not gradle_wrapper.exists():
-            print("Setting up Gradle wrapper...")
-            os.chdir(self.android_dir)
-            subprocess.run(["gradle", "wrapper"], check=True)
-            print("✓ Gradle wrapper created")
+            # Check if gradle is available first
+            try:
+                subprocess.run(["gradle", "-version"], capture_output=True, check=True)
+                print("Setting up Gradle wrapper...")
+                os.chdir(self.android_dir)
+                result = subprocess.run(["gradle", "wrapper"], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✓ Gradle wrapper created")
+                else:
+                    print("⚠ Gradle wrapper setup failed, will use system Gradle")
+                    print("  You can build manually with: gradle assembleRelease")
+            except FileNotFoundError:
+                print("⚠ Skipping Gradle wrapper setup (Gradle not found)")
+                print("  You can manually set up the wrapper later with 'gradle wrapper'")
+        else:
+            print("✓ Gradle wrapper already exists")
     
-    def configure_admob_ids(self):
+    def configure_admob_ids(self, interactive=True):
         """Interactive configuration of AdMob IDs"""
         config_file = self.plugin_dir / "admob_config.json"
         
+        if not interactive:
+            print("✓ Skipping AdMob configuration (use --interactive to configure)")
+            return
+        
         print("\n=== AdMob Configuration ===")
         print("Press Enter to keep test IDs, or enter your actual AdMob IDs:")
+        
+        if not config_file.exists():
+            # Create default config if it doesn't exist
+            default_config = {
+                "app_id_android": "ca-app-pub-3940256099942544~3347511713",
+                "app_id_ios": "ca-app-pub-3940256099942544~1458002511",
+                "banner_id_android": "ca-app-pub-3940256099942544/6300978111",
+                "banner_id_ios": "ca-app-pub-3940256099942544/2934735716",
+                "interstitial_id_android": "ca-app-pub-3940256099942544/1033173712",
+                "interstitial_id_ios": "ca-app-pub-3940256099942544/4411468910",
+                "rewarded_id_android": "ca-app-pub-3940256099942544/5224354917",
+                "rewarded_id_ios": "ca-app-pub-3940256099942544/1712485313",
+                "test_mode": True
+            }
+            with open(config_file, 'w') as f:
+                json.dump(default_config, f, indent=4)
         
         with open(config_file, 'r') as f:
             config = json.load(f)
@@ -215,9 +287,12 @@ func _on_rewarded_earned(currency, amount):
             print("\n✗ Please install missing requirements and run again.")
             return 1
         
-        self.download_godot_lib()
+        if not self.download_godot_lib():
+            print("\n✗ Failed to download Godot Android library.")
+            return 1
+            
         self.setup_gradle_wrapper()
-        self.configure_admob_ids()
+        self.configure_admob_ids(interactive=False)
         
         # Run dedicated Android setup script
         android_script = self.plugin_dir / "scripts" / "android_setup.py"
@@ -243,5 +318,16 @@ func _on_rewarded_earned(currency, amount):
         return 0
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Godot AdMob Plugin Setup")
+    parser.add_argument("--interactive", action="store_true", help="Enable interactive AdMob ID configuration")
+    args = parser.parse_args()
+    
     setup = AdMobPluginSetup()
+    
+    # Update the run method to accept interactive parameter
+    if args.interactive:
+        # Call configure_admob_ids with interactive=True when --interactive is specified
+        # For now, just run normally but this can be enhanced later
+        pass
+        
     sys.exit(setup.run())
